@@ -17,8 +17,8 @@ fi
 
 
 main() {
-    curl -sSL -H  "Accept: application/vnd.github.v3+json" -H "Authorization: token ${GITHUB_TOKEN}" \
-    "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/pulls?head=${GITHUB_REPOSITORY_OWNER}:${GITHUB_REF##*/}" > pull_request.json
+    curl -sSL -H  "Accept: application/vnd.github.v3+json" -H "Authorization: token ${secrets.GITHUB_TOKEN}" \
+    "${secrets.GITHUB_API_URL}/repos/${secrets.GITHUB_REPOSITORY}/pulls?head=${secrets.GITHUB_REPOSITORY_OWNER}:${secrets.GITHUB_REF##*/}" > pull_request.json
 
     PR_BASE_SHA=$(jq -r '.[0].base.sha' < pull_request.json)
     PR_HEAD_SHA=$(jq -r '.[0].head.sha' < pull_request.json)
