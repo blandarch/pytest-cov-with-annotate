@@ -28,9 +28,10 @@ main() {
 
     changed_files=$(git diff --name-only --diff-filter=AM "$PR_BASE_SHA" "$PR_HEAD_SHA" | grep '\.py$' | tr '\n' ' ')
 
-    python -m coverage run -m pytest $changed_files
-    python -m coverage json
-    python /src/main.py
+    python3 -m coverage run -m pytest $changed_files
+    python3 -m coverage json
+    python3 /src/main.py
+    if [-f coverage.json]; then rm coverage.json; fi
 }
 
 main "$@"
