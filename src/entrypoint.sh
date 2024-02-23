@@ -10,7 +10,7 @@ set -x
 
 
 # We need GITHUB_TOKEN to operate
-if [[ -z "$GITHUB_TOKEN" ]]; then
+if [[ -z "${secrets.GITHUB_TOKEN}" ]]; then
 	echo "GITHUB_TOKEN should be set."
 	exit 1
 fi
