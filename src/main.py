@@ -16,43 +16,46 @@ def _get_annotation_message(start_line, end_line):
 def get_missing_range(range_list):
     for a, b in groupby(enumerate(range_list), lambda pair: pair[1] - pair[0]):
         b = list(b)
-        yield {"start_line" : b[0][1], "end_line": b[-1][1]}
+        yield {"start_line": b[0][1], "end_line": b[-1][1]}
 
 
 def create_single_annotation(error, file_path):
-    start_line = error['start_line']
-    end_line = error['end_line']
+    start_line = error["start_line"]
+    end_line = error["end_line"]
     message = _get_annotation_message(start_line, end_line)
     annotation = dict(
         path=file_path,
         start_line=start_line,
         end_line=end_line,
-        annotation_level='warning',
+        annotation_level="warning",
         message=message,
     )
     return annotation
 
 
 class CheckRun:
-    GITHUB_TOKEN = os.environ['GITHUB_TOKEN']
-    GITHUB_EVENT_PATH = os.environ['GITHUB_EVENT_PATH']
-    GITHUB_API= os.environ['GITHUB_API_URL']
+    GITHUB_TOKEN = os.environ["GITHUB_TOKEN"]
+    GITHUB_EVENT_PATH = os.environ["GITHUB_EVENT_PATH"]
+    GITHUB_API = os.environ["GITHUB_API_URL"]
 
     ACCEPT_HEADER_VALUE = f"application/vnd.github.v3+json"
     AUTH_HEADER_VALUE = f"token {GITHUB_TOKEN}"
+
+    COV_THRESHOLD_SINGLE = 80
+    COV_THRESHOLD_TOTAL = 80
 
     # This is the max annotations Github API allows.
     MAX_ANNOTATIONS = 50
 
     def __init__(self):
-        self.repo_full_name = os.environ['GITHUB_REPOSITORY']
-        self.head_sha = os.environ['PR_HEAD_SHA']
+        self.repo_full_name = os.environ["GITHUB_REPOSITORY"]
+        self.head_sha = os.environ["PR_HEAD_SHA"]
         self.read_coverage_output()
         self.files_with_missing_coverage = 0
         self.annotations = []
 
     def read_coverage_output(self):
-        with open('coverage.json') as coverage_output_file:
+        with open("coverage.json") as coverage_output_file:
             self.coverage_output = json.loads(coverage_output_file.read())
 
     def create_annotations(self):
@@ -67,12 +70,45 @@ class CheckRun:
                 if len(self.annotations) == 50:
                     return
 
+    def verify_total_coverage(self):
+        ACTUAL_TOTAL_COVERAGE = self.coverage_output["totals"]["percent_covered"]
+        if ACTUAL_TOTAL_COVERAGE < self.COV_THRESHOLD_TOTAL:
+            raise RuntimeError(
+                f"""The overall actual coverage ({ACTUAL_TOTAL_COVERAGE}%) is lower
+                than the overall expected 
+                coverage which is {self.COV_THRESHOLD_TOTAL}%"""
+            )
+
+    def verify_individual_coverage(self):
+        incomplete_coverage_dict = {
+            file_path: file_data["summary"]["percent_covered"]
+            for file_path, file_data in self.coverage_output["files"].items()
+            if file_data["summary"]["percent_covered"] < self.COV_THRESHOLD_SINGLE
+        }
+
+        if len(incomplete_coverage_dict) != 0:
+            error_message = f"""The following files are not above 
+                the {self.COV_THRESHOLD_SINGLE} requirement threshold: \n"""
+            for file_path, actual_coverage in incomplete_coverage_dict.items():
+                error_message += f"{file_path} => {actual_coverage} \n"
+            raise RuntimeError(error_message)
+
     def get_summary(self):
         number_of_annotations = len(self.annotations)
         total_coverage_files = self.coverage_output["files"].keys()
-        missing_coverage_file_count = sum([True if len(self.coverage_output["files"][file_report]["missing_lines"])
-                                           else False for file_report in total_coverage_files])
-        missing_ranges_count = number_of_annotations if number_of_annotations < 50 else "50+"
+        missing_coverage_file_count = sum(
+            [
+                (
+                    True
+                    if len(self.coverage_output["files"][file_report]["missing_lines"])
+                    else False
+                )
+                for file_report in total_coverage_files
+            ]
+        )
+        missing_ranges_count = (
+            number_of_annotations if number_of_annotations < 50 else "50+"
+        )
         summary = f"""
         Coverage Report:
         Total files : {len(total_coverage_files)}
@@ -83,24 +119,24 @@ class CheckRun:
 
     def get_conclusion(self):
         if len(self.annotations) == 0:
-            return 'success'
-        return 'failure'
+            return "success"
+        return "failure"
 
     def get_payload(self):
         summary = self.get_summary()
         conclusion = self.get_conclusion()
 
         payload = {
-            'name': 'pytest-coverage',
-            'head_sha': self.head_sha,
-            'status': 'completed',
-            'conclusion': conclusion,
-            'completed_at': datetime.now(timezone.utc).isoformat(),
-            'output': {
-                'title': 'Coverage Result',
-                'summary': summary,
-                'text': 'Coverage results',
-                'annotations': self.annotations,
+            "name": "pytest-coverage",
+            "head_sha": self.head_sha,
+            "status": "completed",
+            "conclusion": conclusion,
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+            "output": {
+                "title": "Coverage Result",
+                "summary": summary,
+                "text": "Coverage results",
+                "annotations": self.annotations,
             },
         }
         return payload
@@ -109,16 +145,21 @@ class CheckRun:
         self.create_annotations()
         payload = self.get_payload()
         response = requests.post(
-            f'{self.GITHUB_API}/repos/{self.repo_full_name}/check-runs',
+            f"{self.GITHUB_API}/repos/{self.repo_full_name}/check-runs",
             headers={
-                'Accept': self.ACCEPT_HEADER_VALUE,
-                'Authorization': self.AUTH_HEADER_VALUE,
+                "Accept": self.ACCEPT_HEADER_VALUE,
+                "Authorization": self.AUTH_HEADER_VALUE,
             },
             json=payload,
         )
         response.raise_for_status()
 
+        # additional code that will fail the run if the code coverage
+        # is lower than the individual and and total coverage requirement
+        self.verify_total_coverage()
+        self.verify_individual_coverage()
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     check_run = CheckRun()
     check_run.create()
